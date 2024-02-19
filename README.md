@@ -1,7 +1,5 @@
 # baseAlt
 
-# Project Name
-
 ## Description
 This project consists of a shared library and a CLI utility that allows users to compare binary package lists of two branches obtained from a public REST API (https://rdb.altlinux.org/api/). The user inputs the names of the branches. The utility then performs a comparison of the obtained package lists and saves the results in three JSON files:
 - All packages that exist in the first branch but not in the second.
