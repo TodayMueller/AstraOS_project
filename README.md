@@ -11,7 +11,7 @@ This project consists of a shared library and a CLI utility that allows users to
 ### Prerequisites
 - CMake (version x.x.x)
 - C++ Compiler
-- [httplib](https://github.com/yhirose/cpp-httplib) library
+- [curllib](https://github.com/curl/curl) library
 - [nlohmann/json](https://github.com/nlohmann/json) library
 
 ### Build Instructions
