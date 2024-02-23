@@ -7,19 +7,18 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include(FetchContent)
 
 FetchContent_Declare(
-    httplib
-    GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
-    GIT_TAG        v0.15.3
-)
-FetchContent_MakeAvailable(httplib)
-
-
-FetchContent_Declare(
     json 
     GIT_REPOSITORY https://github.com/nlohmann/json.git
     GIT_TAG        v3.11.3
 )
 FetchContent_MakeAvailable(json)
+
+FetchContent_Declare(
+    CURL
+    GIT_REPOSITORY https://github.com/curl/curl.git
+    GIT_TAG        curl-8_6_0
+)
+FetchContent_MakeAvailable(CURL)
 
 add_library(mylib SHARED
 	lib_src/branchAnalysis.cpp
@@ -30,9 +29,11 @@ target_include_directories(mylib
         ${PROJECT_SOURCE_DIR}/lib_src
 )
 
+find_package(CURL REQUIRED)
+
 target_link_libraries(mylib
     PUBLIC
-        httplib::httplib
+        CURL::libcurl
         nlohmann_json::nlohmann_json
 )
 

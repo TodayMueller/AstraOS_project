@@ -1,30 +1,61 @@
 #include "branchAnalysis.h"
 
-json branchAnalysis::GetFromApi(std::string branchName) {
-    httplib::Client cli("rdb.altlinux.org");
-    cli.set_follow_location(true);
-    auto res = cli.Get("/api/export/branch_binary_packages/" + branchName);
+size_t writeFunction(void* ptr, size_t size, size_t nmemb, std::string* data) {
+    data->append((char*)ptr, size * nmemb);
+    return size * nmemb;
+}
 
-    if (res) {
-        if (res->status == 200) {
-            auto result = std::make_shared<json>(json::parse(res->body));
-            return *result;
-        } else if (res->status == 302) {
-            auto new_location = res->get_header_value("Location");
-            if (!new_location.empty()) {
-                res = cli.Get(new_location.c_str());
-                if (res && res->status == 200) {
-                    auto result = std::make_shared<json>(json::parse(res->body));
-                    return *result;
-                } else {
-                    std::cerr << "Request failed" << std::endl;
+json branchAnalysis::GetFromApi(std::string branchName) {
+    auto curl = curl_easy_init();
+    if (curl) {
+        std::string url = "http://rdb.altlinux.org/api/export/branch_binary_packages/" + branchName;
+        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 50L);
+        curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
+
+        std::string response_string;
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeFunction);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_string);
+
+        CURLcode res = curl_easy_perform(curl);
+        if (res != CURLE_OK) {
+            std::cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res) << std::endl;
+            curl_easy_cleanup(curl);
+            return {};
+        }
+
+        long http_code = 0;
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+
+        if (http_code == 302) {
+            char* new_location;
+            curl_easy_getinfo(curl, CURLINFO_REDIRECT_URL, &new_location);
+            if (new_location) {
+                curl_easy_setopt(curl, CURLOPT_URL, new_location);
+                response_string.clear();
+                res = curl_easy_perform(curl);
+                if (res != CURLE_OK) {
+                    std::cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res) << std::endl;
+                    curl_easy_cleanup(curl);
+                    return {};
                 }
             } else {
-                std::cerr << "Request failed" << std::endl;
+                std::cerr << "Redirect location not provided" << std::endl;
+                curl_easy_cleanup(curl);
+                return {};
             }
         }
-    }
 
+        curl_easy_cleanup(curl);
+
+        if (!response_string.empty()) {
+            return json::parse(response_string);
+        } else {
+            std::cerr << "Empty response" << std::endl;
+        }
+    } else {
+        std::cerr << "Failed to initialize curl" << std::endl;
+    }
     return {};
 }
 
@@ -34,14 +65,14 @@ std::vector<std::string> branchAnalysis::split(const std::string& s) {
     std::istringstream tokenStream(s);
 
     while (std::getline(tokenStream, token, '.')) {
-        std::stringstream ss(token);
-        std::string part;
-        while (std::getline(ss, part, 'p')) {
-            tokens.push_back(part);
-        }
+        tokens.push_back(token);
     }
 
     return tokens;
+}
+
+bool branchAnalysis::isNumeric(const std::string& str) {
+    return std::all_of(str.begin(), str.end(), [](char c) { return std::isdigit(c); });
 }
 
 int branchAnalysis::compareVersions(const std::string& v1, const std::string& v2) {
@@ -54,15 +85,27 @@ int branchAnalysis::compareVersions(const std::string& v1, const std::string& v2
         if (i >= version1.size()) return -1;
         if (i >= version2.size()) return 1;
 
-        try {
+        if (isNumeric(version1[i]) && isNumeric(version2[i])) {
             int num1 = std::stoi(version1[i]);
             int num2 = std::stoi(version2[i]);
 
             if (num1 > num2) return 1;
             if (num1 < num2) return -1;
-        } catch (...) {
-            if (version1[i] > version2[i]) return 1;
-            if (version1[i] < version2[i]) return -1;
+
+        } else {
+            const std::string& str1 = version1[i];
+            const std::string& str2 = version2[i];
+            size_t len1 = str1.length();
+            size_t len2 = str2.length();
+            size_t minLen = std::min(len1, len2);
+
+            for (size_t j = 0; j < minLen; ++j) {
+                if (str1[j] > str2[j]) return 1;
+                if (str1[j] < str2[j]) return -1;
+            }
+
+            if (len1 > len2) return 1;
+            if (len1 < len2) return -1;
         }
     }
 
@@ -139,5 +182,6 @@ void branchAnalysis::executeAnalysis(std::string branch1, std::string branch2) {
     if (!data1.empty() && !data2.empty()) {
         FindDiff(std::make_shared<json>(data1), std::make_shared<json>(data2));
     }
+
     return;
 }
